@@ -40,13 +40,13 @@ const router = createBrowserRouter(
         }
       />
       <Route
-        path="/dashboard"
+        path="/dashboard/*"
         element={
           <AuthLayout authenicated={true}>
             <Dashboard />
           </AuthLayout>
         }
-      />
+      ></Route>
     </Route>
   )
 );
