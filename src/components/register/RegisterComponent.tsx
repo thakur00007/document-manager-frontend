@@ -23,7 +23,6 @@ function RegisterComponent() {
   const userSignup = async (data: UserSignup): Promise<void> => {
     UserServiceInstance.userSignup(data)
       .then((res) => {
-        dispatch(login(res.data.user));
         navigate("/signin");
         toast.success(res.message);
       })
