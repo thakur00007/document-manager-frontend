@@ -38,7 +38,7 @@ function LoginComponent() {
         <form onSubmit={handleSubmit(userLogin)} className="space-y-4">
           {/* Username */}
           <Input
-            label="Username or email"
+            label="Username"
             error={errors.username?.message}
             placeholder="e.g. johndoe"
             {...register("username", { required: "Username is required" })}
