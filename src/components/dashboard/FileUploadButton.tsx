@@ -3,17 +3,28 @@ import { ArrowUpTrayIcon } from "@heroicons/react/24/outline";
 import { useFolderContext } from "./context/FolderProvider";
 import FileServiceInstance from "../../services/fileService";
 import { toast } from "react-toastify";
+import { useDispatch } from "react-redux";
+import { updateStorageInfo } from "../../store/auth/authSlice";
 
 export default function FileUploadButton() {
   const { currentPath, triggerRefresh } = useFolderContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dispatch = useDispatch();
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       try {
         const toastId = toast.loading("Uploading...");
-        await FileServiceInstance.uploadFile(file, currentPath);
+        const response = await FileServiceInstance.uploadFile(
+          file,
+          currentPath
+        );
+        console.log("Upload response:", response);
+        const { storageUsed, maxStorage } = response.data.file;
+
+        dispatch(updateStorageInfo({ storageUsed, maxStorage }));
+
         toast.update(toastId, {
           render: "File uploaded successfully",
           type: "success",

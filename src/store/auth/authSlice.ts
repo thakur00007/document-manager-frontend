@@ -28,9 +28,17 @@ const authSlice = createSlice({
       removeValue("access-token");
       removeValue("refresh-token");
     },
+    updateStorageInfo: (state, action) => {
+      if (state.loggedInUser) {
+        const { storageUsed, maxStorage } = action.payload;
+
+        state.loggedInUser.storageUsed = storageUsed;
+        state.loggedInUser.maxStorage = maxStorage;
+      }
+    },
   },
 });
 
 export type { AuthState };
-export const { login, logout } = authSlice.actions;
+export const { login, logout, updateStorageInfo } = authSlice.actions;
 export default authSlice.reducer;

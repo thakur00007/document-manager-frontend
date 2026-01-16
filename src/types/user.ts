@@ -2,7 +2,9 @@ export interface User {
   id: string;
   username: string;
   email: string;
-  FullName: string;
+  fullName: string;
+  storageUsed: number;
+  maxStorage: number;
   createdAt?: Date;
   updatedAt?: Date;
 }

@@ -1,74 +1,19 @@
-// import axios from "axios";
+import axios from "axios";
+import api from "./api"; // Import the global instance
 import type { ApiResponse, User, UserLogin, UserSignup } from "../types/";
 import ApiError from "../util/ApiError";
-import { setValue, getValue, removeValue } from "../util/localStorage";
+import { setValue, removeValue, getValue } from "../util/localStorage";
 
 export class UserService {
-  url: string;
-
-  constructor() {
-    this.url = `${import.meta.env.VITE_API_HOST_URL}${
-      import.meta.env.VITE_API_DEFAULT_PATH
-    }/user`;
-  }
-
-  /* =======================
-     TOKEN HELPERS
-  ======================== */
-
-  private getAccessToken(): string | null {
-    return getValue("access-token");
-  }
-
-  private getRefreshToken(): string | null {
-    return getValue("refresh-token");
-  }
-
-  private setTokens(accessToken?: string, refreshToken?: string) {
-    accessToken && setValue("access-token", accessToken);
-    refreshToken && setValue("refresh-token", refreshToken);
-  }
-
-  private clearTokens() {
-    removeValue("access-token");
-    removeValue("refresh-token");
-  }
-
-  /* =======================
-     FETCH WITH AUTO REFRESH
-  ======================== */
-
-  private async fetchWithAuth(
-    input: RequestInfo,
-    init: RequestInit = {},
-    retry = true
-  ): Promise<Response> {
-    const accessToken = this.getAccessToken();
-
-    const headers: HeadersInit = {
-      "Content-Type": "application/json",
-      ...(init.headers || {}),
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-    };
-
-    const response = await fetch(input, { ...init, headers });
-    // Access token expired → refresh once
-    if (response.status === 401 && retry) {
-      let body: any = null;
-
-      try {
-        body = await response.clone().json();
-      } catch {
-        body = null;
-      }
-
-      if (body?.message === "ACCESS_TOKEN_EXPIRED") {
-        await this.refreshToken();
-        return this.fetchWithAuth(input, init, false);
-      }
+  // Helper to standardize error handling across all methods
+  private handleError(error: unknown) {
+    if (axios.isAxiosError(error)) {
+      const message =
+        error.response?.data?.message || "An unexpected error occurred!";
+      throw new ApiError(message);
     }
-
-    return response;
+    if (error instanceof ApiError) throw error;
+    throw new ApiError("An unexpected error occurred! Please try again.");
   }
 
   /* =======================
@@ -77,121 +22,88 @@ export class UserService {
 
   async userSignup(userDetails: UserSignup) {
     try {
-      const response = await fetch(this.url + "/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user: userDetails }),
-      });
-
-      const responseData: ApiResponse<{ user: User }> = await response.json();
-
-      if (!response.ok && responseData?.name === "ApiError") {
-        throw new ApiError(responseData.message);
-      }
-
-      return responseData;
+      // Use 'api' instance. Path is relative to /api/v1, so we add /user/create
+      const response = await api.post<ApiResponse<{ user: User }>>(
+        "/user/create",
+        { user: userDetails }
+      );
+      return response.data;
     } catch (error) {
-      if (error instanceof ApiError) throw error;
-      throw new ApiError("An unexpected error occurred! Please try again.");
+      this.handleError(error);
     }
   }
 
   async userLogin(credentials: UserLogin) {
     try {
-      const response = await fetch(this.url + "/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user: credentials }),
-      });
+      const response = await api.post<
+        ApiResponse<{ user: User; accessToken: string; refreshToken: string }>
+      >("/user/login", { user: credentials });
 
-      const responseData: ApiResponse<{
-        user: User;
-        accessToken: string;
-        refreshToken: string;
-      }> = await response.json();
+      const { accessToken, refreshToken } = response.data.data;
 
-      if (!response.ok && responseData?.name === "ApiError") {
-        throw new ApiError(responseData.message);
-      }
+      // Store tokens using helper
+      setValue("access-token", accessToken);
+      setValue("refresh-token", refreshToken);
 
-      this.setTokens(
-        responseData.data.accessToken,
-        responseData.data.refreshToken
-      );
-
-      return responseData;
+      return response.data;
     } catch (error) {
-      if (error instanceof ApiError) throw error;
-      throw new ApiError("An unexpected error occurred! Please try again.");
+      this.handleError(error);
     }
   }
 
   async getCurrentUser() {
     try {
-      const response = await this.fetchWithAuth(this.url + "/profile");
-      const responseData: ApiResponse<{ user: User }> = await response.json();
-
-      if (!response.ok && responseData?.name === "ApiError") {
-        throw new ApiError(responseData.message);
-      }
-
-      return responseData;
+      // Authorization header is auto-injected by api interceptor
+      const response =
+        await api.get<ApiResponse<{ user: User }>>("/user/profile");
+      return response.data;
     } catch (error) {
-      if (error instanceof ApiError) throw error;
-      throw new ApiError("An unexpected error occurred! Please try again.");
+      console.log(error);
+      this.handleError(error);
     }
   }
 
   async logout() {
     try {
-      const response = await this.fetchWithAuth(this.url + "/logout", {
-        method: "POST",
-      });
-
-      const responseData: ApiResponse<unknown> = await response.json();
-
-      if (!response.ok && responseData?.name === "ApiError") {
-        throw new ApiError(responseData.message);
-      }
-
+      const response = await api.post<ApiResponse<unknown>>("/user/logout");
       this.clearTokens();
-      return responseData;
+      return response.data;
     } catch (error) {
+      // Even if API fails, clear local tokens
       this.clearTokens();
-      if (error instanceof ApiError) throw error;
-      throw new ApiError("An unexpected error occurred! Please try again.");
+      this.handleError(error);
     }
   }
 
+  // Manual refresh method (optional, mostly handled by interceptor now)
   async refreshToken() {
-    const refreshToken = this.getRefreshToken();
+    const refreshToken = getValue("refresh-token");
     if (!refreshToken) {
       this.clearTokens();
       throw new ApiError("Session expired. Please login again.");
     }
 
-    const response = await fetch(this.url + "/refresh-token", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
-    });
+    try {
+      // Using 'api' here is fine; if 401, the interceptor will catch it anyway
+      const response = await api.post<
+        ApiResponse<{ accessToken: string; refreshToken: string }>
+      >("/user/refresh-token", { refreshToken });
 
-    const responseData: ApiResponse<{
-      accessToken: string;
-      refreshToken: string;
-    }> = await response.json();
+      const { accessToken, refreshToken: newRefreshToken } = response.data.data;
 
-    if (!response.ok) {
+      setValue("access-token", accessToken);
+      setValue("refresh-token", newRefreshToken);
+
+      return response.data;
+    } catch (error) {
       this.clearTokens();
-      throw new ApiError("Session expired. Please login again.");
+      this.handleError(error);
     }
+  }
 
-    this.setTokens(
-      responseData.data.accessToken,
-      responseData.data.refreshToken
-    );
-
-    return responseData;
+  private clearTokens() {
+    removeValue("access-token");
+    removeValue("refresh-token");
   }
 }
 

@@ -17,7 +17,7 @@ function App() {
     setLoading(true);
     UserServiceInstance.getCurrentUser()
       .then((res) => {
-        if (res.data.user) {
+        if (res?.data.user) {
           dispatch(login(res.data.user));
         } else {
           dispatch(logout());
